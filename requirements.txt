@@ -1,5 +1,5 @@
-# Sample requirements.txt
-streamlit>=1.0
-pandas==1.2.3
-numpy>=1.20.0
-scikit-learn<0.24
+streamlit
+joblib
+scikit-learn
+numpy
+pandas
