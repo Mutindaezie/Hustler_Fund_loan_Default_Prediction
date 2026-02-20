@@ -19,4 +19,4 @@ encoded_features = encoder.fit_transform(data[categorical_features]).toarray()
 encoded_df = pd.DataFrame(encoded_features, columns=encoder.get_feature_names_out(categorical_features))
 
 # Combine with numerical features
-final_data = pd.concat([data[numerical_features].reset_index(drop=True), encoded_df.reset_index(drop=True)], axis=1}
+final_data = pd.concat([data[numerical_features].reset_index(drop=True), encoded_df.reset_index(drop=True)], axis=1)
