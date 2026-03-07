@@ -78,6 +78,9 @@ if st.button("Predict Default Risk", key="predict_btn"):
         # Get encoded feature names
         cat_feature_names = encoder.get_feature_names_out(categorical_features)
 
+        # Create DataFrame from encoded data - ADD THIS LINE
+        cat_df = pd.DataFrame(cat_encoded, columns=cat_feature_names)
+
         # Combine numeric and encoded categorical features
         processed_df = pd.concat([num_data.reset_index(drop=True), cat_df], axis=1)
 
