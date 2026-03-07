@@ -71,9 +71,9 @@ if st.button("Predict Default Risk", key="predict_btn"):
         cat_data = input_df[categorical_features]
         num_data = input_df[numeric_features]
         
-     # Apply OneHotEncoding to categorical features
-         encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-         cat_encoded = encoder.fit_transform(cat_data)
+        # Apply OneHotEncoding to categorical features
+        encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        cat_encoded = encoder.fit_transform(cat_data)
 
         # Get encoded feature names
         cat_feature_names = encoder.get_feature_names_out(categorical_features)
