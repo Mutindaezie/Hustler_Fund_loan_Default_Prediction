@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import json
-import os
+import sqlite3
 from datetime import datetime
 from auth_manager import AuthManager
 import matplotlib.pyplot as plt
@@ -159,6 +158,172 @@ h4, h5, h6 {
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+# Database Functions
+# ─────────────────────────────────────────────
+def init_database():
+    """Initialize SQLite database"""
+    conn = sqlite3.connect('hustler_fund.db')
+    c = conn.cursor()
+    
+    # Users table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT NOT NULL,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        blocked INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Predictions table
+    c.execute('''CREATE TABLE IF NOT EXISTS predictions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        age INTEGER,
+        gender TEXT,
+        county TEXT,
+        monthly_income INTEGER,
+        loan_amount INTEGER,
+        loan_purpose TEXT,
+        mpesa_transactions INTEGER,
+        mpesa_volume INTEGER,
+        repayment_score REAL,
+        credit_score REAL,
+        default_probability REAL,
+        risk_level TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (username) REFERENCES users(username)
+    )''')
+    
+    conn.commit()
+    conn.close()
+
+
+def register_user(full_name, username, password):
+    """Register a new user in the database"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        hashed_password = AuthManager.hash_password(password)
+        
+        c.execute('INSERT INTO users (full_name, username, password) VALUES (?, ?, ?)',
+                  (full_name, username, hashed_password))
+        
+        conn.commit()
+        conn.close()
+        return True, "✅ Account created successfully!"
+    except sqlite3.IntegrityError:
+        return False, "❌ Username already exists"
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
+
+
+def login_user(username, password):
+    """Verify user credentials"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        c.execute('SELECT full_name, password, is_admin, blocked FROM users WHERE username = ?', (username,))
+        user = c.fetchone()
+        conn.close()
+        
+        if user:
+            full_name, hashed_password, is_admin, blocked = user
+            
+            if blocked:
+                return False, None, False, "❌ Your account has been blocked"
+            
+            if AuthManager.validate_password(password, hashed_password):
+                return True, full_name, bool(is_admin), "✅ Login successful"
+            else:
+                return False, None, False, "❌ Invalid password"
+        else:
+            return False, None, False, "❌ Username not found"
+    except Exception as e:
+        return False, None, False, f"❌ Error: {str(e)}"
+
+
+def save_prediction(username, age, gender, county, monthly_income, loan_amount, 
+                   loan_purpose, mpesa_transactions, mpesa_volume, repayment_score, 
+                   credit_score, default_probability, risk_level):
+    """Save prediction to database"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        c.execute('''INSERT INTO predictions 
+                    (username, age, gender, county, monthly_income, loan_amount, loan_purpose,
+                     mpesa_transactions, mpesa_volume, repayment_score, credit_score,
+                     default_probability, risk_level)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                  (username, age, gender, county, monthly_income, loan_amount, loan_purpose,
+                   mpesa_transactions, mpesa_volume, repayment_score, credit_score,
+                   default_probability, risk_level))
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error saving prediction: {str(e)}")
+        return False
+
+
+def get_user_predictions(username):
+    """Get all predictions for a user"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        c.execute('''SELECT age, gender, county, monthly_income, loan_amount, loan_purpose,
+                           mpesa_transactions, mpesa_volume, repayment_score, credit_score,
+                           default_probability, risk_level, created_at
+                    FROM predictions WHERE username = ? ORDER BY created_at DESC''', (username,))
+        
+        predictions = c.fetchall()
+        conn.close()
+        
+        return predictions
+    except Exception as e:
+        st.error(f"Error retrieving predictions: {str(e)}")
+        return []
+
+
+def get_all_users():
+    """Get all users from database"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        c.execute('SELECT full_name, username, is_admin, blocked, created_at FROM users ORDER BY created_at DESC')
+        users = c.fetchall()
+        conn.close()
+        
+        return users
+    except Exception as e:
+        st.error(f"Error retrieving users: {str(e)}")
+        return []
+
+
+def block_unblock_user(username, block):
+    """Block or unblock a user"""
+    try:
+        conn = sqlite3.connect('hustler_fund.db')
+        c = conn.cursor()
+        
+        c.execute('UPDATE users SET blocked = ? WHERE username = ?', (1 if block else 0, username))
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        return False
+
+
+# ─────────────────────────────────────────────
 # Data & Model (cached)
 # ─────────────────────────────────────────────
 @st.cache_data
@@ -247,45 +412,19 @@ def train_model(df):
 
 
 # ─────────────────────────────────────────────
-# Helper Functions
-# ─────────────────────────────────────────────
-def load_user_data():
-    if os.path.exists('users.json'):
-        with open('users.json', 'r') as f:
-            return json.load(f)
-    return {}
-
-
-def save_user_data(data):
-    with open('users.json', 'w') as f:
-        json.dump(data, f, indent=4)
-
-
-def load_predictions():
-    if os.path.exists('predictions.json'):
-        with open('predictions.json', 'r') as f:
-            return json.load(f)
-    return {}
-
-
-def save_predictions(data):
-    with open('predictions.json', 'w') as f:
-        json.dump(data, f, indent=4)
-
-
-# ─────────────────────────────────────────────
 # Initialize Session State
 # ─────────────────────────────────────────────
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'username' not in st.session_state:
     st.session_state.username = None
+if 'full_name' not in st.session_state:
+    st.session_state.full_name = None
 if 'is_admin' not in st.session_state:
     st.session_state.is_admin = False
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = load_user_data()
-if 'predictions' not in st.session_state:
-    st.session_state.predictions = load_predictions()
+
+# Initialize database
+init_database()
 
 
 # ─────────────────────────────────────────────
@@ -305,65 +444,64 @@ def login_page():
 
     with col1:
         st.subheader("🔐 Login")
-        login_username = st.text_input("Username", key="login_username")
-        login_password = st.text_input("Password", type="password", key="login_password")
+        st.markdown('<div class="info-box">Enter your credentials to login to your account</div>', unsafe_allow_html=True)
+        
+        login_username = st.text_input("Username", key="login_username", placeholder="Enter your username")
+        login_password = st.text_input("Password", type="password", key="login_password", placeholder="Enter your password")
 
-        if st.button("Login", use_container_width=True, key="login_btn"):
+        if st.button("🔓 Login", use_container_width=True, key="login_btn"):
             if login_username and login_password:
-                if login_username in st.session_state.user_data:
-                    user = st.session_state.user_data[login_username]
-                    if AuthManager.validate_password(login_password, user['password']):
-                        if user.get('blocked', 0) == 1:
-                            st.error("❌ Your account has been blocked by an administrator.")
-                        else:
-                            st.session_state.logged_in = True
-                            st.session_state.username = login_username
-                            st.session_state.is_admin = user.get('is_admin', False)
-                            st.success("✅ Logged in successfully!")
-                            st.rerun()
-                    else:
-                        st.error("❌ Invalid password")
+                success, full_name, is_admin, message = login_user(login_username, login_password)
+                
+                if success:
+                    st.session_state.logged_in = True
+                    st.session_state.username = login_username
+                    st.session_state.full_name = full_name
+                    st.session_state.is_admin = is_admin
+                    st.success(message)
+                    st.rerun()
                 else:
-                    st.error("❌ User not found")
+                    st.error(message)
             else:
                 st.warning("⚠️ Please enter username and password")
 
     with col2:
-        st.subheader("📝 Sign Up")
-        signup_username = st.text_input("Username", key="signup_username")
-        signup_email = st.text_input("Email", key="signup_email")
-        signup_password = st.text_input("Password", type="password", key="signup_password")
-        signup_password_confirm = st.text_input("Confirm Password", type="password", key="signup_password_confirm")
+        st.subheader("📝 Create Account")
+        st.markdown('<div class="info-box">Sign up to create a new account</div>', unsafe_allow_html=True)
+        
+        signup_full_name = st.text_input("Full Name", key="signup_full_name", placeholder="Enter your full name")
+        signup_username = st.text_input("Username", key="signup_username", placeholder="Choose a username")
+        signup_password = st.text_input("New Password", type="password", key="signup_password", placeholder="Create a strong password (min 8 chars)")
+        signup_password_confirm = st.text_input("Confirm Password", type="password", key="signup_password_confirm", placeholder="Confirm your password")
 
-        if st.button("Sign Up", use_container_width=True, key="signup_btn"):
-            if not all([signup_username, signup_email, signup_password, signup_password_confirm]):
+        if st.button("✅ Sign Up", use_container_width=True, key="signup_btn"):
+            # Validation
+            if not all([signup_full_name, signup_username, signup_password, signup_password_confirm]):
                 st.warning("⚠️ Please fill all fields")
-            elif signup_username in st.session_state.user_data:
-                st.error("❌ Username already exists")
+            elif len(signup_password) < 8:
+                st.error("❌ Password must be at least 8 characters long")
             elif signup_password != signup_password_confirm:
                 st.error("❌ Passwords do not match")
-            elif len(signup_password) < 8:
-                st.error("❌ Password must be at least 8 characters")
+            elif not signup_username.replace('_', '').replace('-', '').isalnum():
+                st.error("❌ Username can only contain letters, numbers, hyphens, and underscores")
             else:
-                hashed_password = AuthManager.hash_password(signup_password)
-                st.session_state.user_data[signup_username] = {
-                    'password': hashed_password,
-                    'email': signup_email,
-                    'is_admin': False,
-                    'blocked': 0,
-                    'created_at': datetime.now().isoformat()
-                }
-                save_user_data(st.session_state.user_data)
-                st.success("✅ Account created successfully! Please login.")
+                success, message = register_user(signup_full_name, signup_username, signup_password)
+                
+                if success:
+                    st.success(message)
+                    st.info("🔐 Your account has been created! Please login with your credentials.")
+                else:
+                    st.error(message)
 
 
 # ─────────────────────────────────────────────
 # User Dashboard
 # ─────────────────────────────────────────────
 def user_dashboard(df, model, preprocessor, metrics, importance):
-    st.markdown("""
+    st.markdown(f"""
     <div style='text-align:center; padding: 1rem 0;'>
       <h1 style='font-size:2.0rem; letter-spacing:2px;'>💰 HUSTLER FUND</h1>
+      <p style='color:#64b5f6; font-size:0.9rem;'>Welcome, {st.session_state.full_name}! 👋</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -421,17 +559,11 @@ def user_dashboard(df, model, preprocessor, metrics, importance):
             else:
                 st.markdown(f'<div class="risk-low">✓ LOW DEFAULT RISK — Recommend: APPROVE LOAN</div>', unsafe_allow_html=True)
 
-            # Save prediction
-            if st.session_state.username not in st.session_state.predictions:
-                st.session_state.predictions[st.session_state.username] = []
-            
-            st.session_state.predictions[st.session_state.username].append({
-                'timestamp': datetime.now().isoformat(),
-                'default_probability': float(default_prob),
-                'risk_level': risk_level
-            })
-            save_predictions(st.session_state.predictions)
-            st.success("✅ Prediction saved to your history!")
+            # Save to database
+            if save_prediction(st.session_state.username, age, gender, county, monthly_income, 
+                             loan_amount, loan_purpose, mpesa_transactions, mpesa_volume, 
+                             repayment_score, credit_score, float(default_prob), risk_level):
+                st.success("✅ Prediction saved to your history!")
 
     with tab2:
         st.markdown("### Model Performance Metrics")
@@ -511,15 +643,20 @@ def user_dashboard(df, model, preprocessor, metrics, importance):
 
     with tab5:
         st.markdown("### Your Prediction History")
-        if st.session_state.username in st.session_state.predictions:
-            history = st.session_state.predictions[st.session_state.username]
-            if history:
-                df_history = pd.DataFrame(history)
-                df_history['timestamp'] = pd.to_datetime(df_history['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-                st.dataframe(df_history, use_container_width=True)
-                st.metric("Total Predictions Made", len(history))
-            else:
-                st.info("📊 No predictions yet. Make your first prediction!")
+        predictions = get_user_predictions(st.session_state.username)
+        
+        if predictions:
+            df_history = pd.DataFrame(predictions, columns=[
+                'Age', 'Gender', 'County', 'Monthly Income', 'Loan Amount', 'Loan Purpose',
+                'M-Pesa Transactions', 'M-Pesa Volume', 'Repayment Score', 'Credit Score',
+                'Default Probability', 'Risk Level', 'Date & Time'
+            ])
+            
+            df_history['Default Probability'] = df_history['Default Probability'].apply(lambda x: f"{x*100:.1f}%")
+            df_history['Date & Time'] = pd.to_datetime(df_history['Date & Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+            st.dataframe(df_history, use_container_width=True)
+            st.metric("Total Predictions Made", len(predictions))
         else:
             st.info("📊 No predictions yet. Make your first prediction!")
 
@@ -538,30 +675,29 @@ def admin_dashboard():
 
     with tab1:
         st.subheader("Manage Users")
-        users_list = list(st.session_state.user_data.keys())
+        users = get_all_users()
         
-        if users_list:
-            for username in users_list:
-                with st.expander(f"👤 {username}"):
-                    user = st.session_state.user_data[username]
+        if users:
+            for full_name, username, is_admin, blocked, created_at in users:
+                with st.expander(f"👤 {full_name} (@{username})"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.write(f"**Email:** {user['email']}")
-                        st.write(f"**Admin:** {'Yes ✅' if user.get('is_admin') else 'No'}")
-                        st.write(f"**Status:** {'🔒 Blocked' if user.get('blocked') else '✅ Active'}")
+                        st.write(f"**Full Name:** {full_name}")
+                        st.write(f"**Username:** @{username}")
+                        st.write(f"**Admin:** {'Yes ✅' if is_admin else 'No'}")
+                        st.write(f"**Status:** {'🔒 Blocked' if blocked else '✅ Active'}")
+                        st.write(f"**Joined:** {created_at}")
 
                     with col2:
-                        if user.get('blocked'):
+                        if blocked:
                             if st.button(f"🔓 Unblock {username}", key=f"unblock_{username}"):
-                                st.session_state.user_data[username]['blocked'] = 0
-                                save_user_data(st.session_state.user_data)
+                                block_unblock_user(username, False)
                                 st.success(f"✅ {username} unblocked!")
                                 st.rerun()
                         else:
                             if st.button(f"🔒 Block {username}", key=f"block_{username}"):
-                                st.session_state.user_data[username]['blocked'] = 1
-                                save_user_data(st.session_state.user_data)
+                                block_unblock_user(username, True)
                                 st.warning(f"⚠️ {username} blocked!")
                                 st.rerun()
         else:
@@ -569,25 +705,21 @@ def admin_dashboard():
 
     with tab2:
         st.subheader("System Statistics")
-        total_users = len(st.session_state.user_data)
-        blocked_users = sum(1 for u in st.session_state.user_data.values() if u.get('blocked'))
-        admin_users = sum(1 for u in st.session_state.user_data.values() if u.get('is_admin'))
-        total_predictions = sum(len(v) for v in st.session_state.predictions.values())
-
+        users = get_all_users()
+        
+        total_users = len(users)
+        blocked_users = sum(1 for u in users if u[3])
+        admin_users = sum(1 for u in users if u[2])
+        
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("👥 Total Users", total_users)
         m2.metric("✅ Active Users", total_users - blocked_users)
         m3.metric("👨‍💼 Admin Users", admin_users)
-        m4.metric("📊 Total Predictions", total_predictions)
+        m4.metric("📊 Total Predictions", "Coming soon")
 
     with tab3:
         st.subheader("Prediction Activity")
-        if st.session_state.predictions:
-            for username, preds in st.session_state.predictions.items():
-                if preds:
-                    st.write(f"**{username}**: {len(preds)} predictions made")
-        else:
-            st.info("No prediction activity yet.")
+        st.info("📊 Activity log feature coming soon")
 
 
 # ─────────────────────────────────────────────
@@ -605,18 +737,20 @@ else:
     # Sidebar
     with st.sidebar:
         st.markdown("---")
-        st.markdown(f"**👤 Logged in as:** `{st.session_state.username}`")
+        st.markdown(f"**👤 Logged in as:** `{st.session_state.full_name}`")
+        st.markdown(f"**@username:** `{st.session_state.username}`")
         
         if st.session_state.is_admin:
-            st.markdown("**🔑 Role:** Admin")
+            st.markdown("**🔑 Role:** 👨‍💼 Admin")
         else:
-            st.markdown("**🔑 Role:** User")
+            st.markdown("**🔑 Role:** 👤 User")
         
         st.markdown("---")
         
         if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
             st.session_state.logged_in = False
             st.session_state.username = None
+            st.session_state.full_name = None
             st.session_state.is_admin = False
             st.rerun()
 
