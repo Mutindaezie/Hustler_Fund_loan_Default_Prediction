@@ -29,7 +29,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# Custom CSS
+# Custom CSS with Background
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -40,18 +40,23 @@ html, body, [class*="css"] {
 }
 
 .stApp {
-    background: #0a0f1e;
+    background: linear-gradient(135deg, rgba(10, 15, 30, 0.95), rgba(13, 21, 38, 0.95)), 
+                url('https://images.unsplash.com/photo-1557821552-17105176677c?w=1200') center/cover,
+                linear-gradient(to right, #0a0f1e, #1a2332);
+    background-blend-mode: overlay, screen, multiply;
     color: #e8eaf6;
+    min-height: 100vh;
 }
 
 section[data-testid="stSidebar"] {
-    background: #0d1526;
+    background: rgba(13, 21, 38, 0.98);
     border-right: 1px solid #1e2d4a;
 }
 
 h1, h2, h3 {
     font-family: 'Space Mono', monospace !important;
     color: #00e5a0 !important;
+    text-shadow: 0 2px 10px rgba(0, 229, 160, 0.3);
 }
 
 h4, h5, h6 {
@@ -59,10 +64,11 @@ h4, h5, h6 {
 }
 
 [data-testid="metric-container"] {
-    background: #111827;
+    background: rgba(17, 24, 39, 0.9);
     border: 1px solid #1e3a5f;
     border-radius: 12px;
     padding: 16px;
+    backdrop-filter: blur(10px);
 }
 
 [data-testid="metric-container"] label {
@@ -96,7 +102,7 @@ h4, h5, h6 {
 }
 
 .stTabs [data-baseweb="tab-list"] {
-    background: #111827;
+    background: rgba(17, 24, 39, 0.8);
     border-radius: 10px;
     gap: 4px;
     padding: 4px;
@@ -131,6 +137,7 @@ h4, h5, h6 {
     font-weight: 700;
     text-align: center;
     letter-spacing: 2px;
+    box-shadow: 0 8px 25px rgba(255, 23, 68, 0.3);
 }
 
 .risk-low {
@@ -143,16 +150,40 @@ h4, h5, h6 {
     font-weight: 700;
     text-align: center;
     letter-spacing: 2px;
+    box-shadow: 0 8px 25px rgba(0, 229, 160, 0.3);
+}
+
+.risk-medium {
+    background: linear-gradient(135deg, #ffab00, #ff6f00);
+    color: white;
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-family: 'Space Mono', monospace;
+    font-size: 1.4rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 2px;
+    box-shadow: 0 8px 25px rgba(255, 171, 0, 0.3);
 }
 
 .info-box {
-    background: #111827;
+    background: rgba(17, 24, 39, 0.9);
     border-left: 3px solid #00e5a0;
     padding: 14px 18px;
     border-radius: 8px;
     margin: 8px 0;
     font-size: 0.88rem;
     color: #cfd8dc;
+    backdrop-filter: blur(10px);
+}
+
+.loan-analysis {
+    background: rgba(30, 58, 95, 0.8);
+    border-left: 4px solid #00e5a0;
+    padding: 16px;
+    border-radius: 10px;
+    margin: 10px 0;
+    font-family: 'Space Mono', monospace;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -165,7 +196,6 @@ def init_database():
     conn = sqlite3.connect('hustler_fund.db')
     c = conn.cursor()
     
-    # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         full_name TEXT NOT NULL,
@@ -176,7 +206,6 @@ def init_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Predictions table
     c.execute('''CREATE TABLE IF NOT EXISTS predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL,
@@ -324,6 +353,56 @@ def block_unblock_user(username, block):
 
 
 # ─────────────────────────────────────────────
+# Enhanced Prediction Logic
+# ─────────────────────────────────────────────
+def calculate_default_risk(age, monthly_income, loan_amount, mpesa_transactions, mpesa_volume):
+    """
+    Enhanced prediction logic considering key factors:
+    - Age (younger = higher risk)
+    - Loan to Income Ratio (higher ratio = higher risk)
+    - M-Pesa activity (lower activity = higher risk)
+    """
+    risk_score = 0
+    
+    # Age risk: Younger = Higher Risk
+    if age < 25:
+        risk_score += 0.25
+    elif age < 35:
+        risk_score += 0.15
+    elif age > 55:
+        risk_score += 0.10
+    
+    # Loan to Income Ratio Risk
+    loan_to_income = loan_amount / monthly_income if monthly_income > 0 else 10
+    
+    if loan_to_income > 2:  # Loan is more than 2x monthly income
+        risk_score += 0.30
+    elif loan_to_income > 1.5:  # Loan is 1.5-2x monthly income
+        risk_score += 0.20
+    elif loan_to_income > 1:  # Loan is 1-1.5x monthly income
+        risk_score += 0.10
+    
+    # M-Pesa Activity Risk: Lower activity = Higher Risk
+    if mpesa_transactions < 10:
+        risk_score += 0.25
+    elif mpesa_transactions < 30:
+        risk_score += 0.15
+    elif mpesa_transactions < 50:
+        risk_score += 0.05
+    
+    # M-Pesa Volume Risk
+    if mpesa_volume < 5000:
+        risk_score += 0.15
+    elif mpesa_volume < 10000:
+        risk_score += 0.08
+    
+    # Cap risk score at 1.0
+    default_probability = min(risk_score, 1.0)
+    
+    return default_probability
+
+
+# ─────────────────────────────────────────────
 # Data & Model (cached)
 # ─────────────────────────────────────────────
 @st.cache_data
@@ -423,7 +502,6 @@ if 'full_name' not in st.session_state:
 if 'is_admin' not in st.session_state:
     st.session_state.is_admin = False
 
-# Initialize database
 init_database()
 
 
@@ -437,6 +515,7 @@ def login_page():
       <p style='color:#64b5f6; font-family: Space Mono, monospace; font-size:0.85rem; letter-spacing:2px;'>
         CREDIT DEFAULT RISK PREDICTION SYSTEM
       </p>
+      <p style='color:#90a4ae; font-size:0.75rem; margin-top: 1rem;'>Empowering Hustlers 🇰🇪</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -475,7 +554,6 @@ def login_page():
         signup_password_confirm = st.text_input("Confirm Password", type="password", key="signup_password_confirm", placeholder="Confirm your password")
 
         if st.button("✅ Sign Up", use_container_width=True, key="signup_btn"):
-            # Validation
             if not all([signup_full_name, signup_username, signup_password, signup_password_confirm]):
                 st.warning("⚠️ Please fill all fields")
             elif len(signup_password) < 8:
@@ -495,75 +573,161 @@ def login_page():
 
 
 # ─────────────────────────────────────────────
-# User Dashboard
+# User Dashboard - Simple Prediction Only
 # ─────────────────────────────────────────────
-def user_dashboard(df, model, preprocessor, metrics, importance):
+def user_dashboard():
     st.markdown(f"""
     <div style='text-align:center; padding: 1rem 0;'>
       <h1 style='font-size:2.0rem; letter-spacing:2px;'>💰 HUSTLER FUND</h1>
       <p style='color:#64b5f6; font-size:0.9rem;'>Welcome, {st.session_state.full_name}! 👋</p>
+      <p style='color:#90a4ae; font-size:0.8rem;'>Check your loan eligibility instantly</p>
     </div>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔍 Predict Risk", "📊 Model Performance", "📈 Data Insights", "📋 Dataset", "📜 My History"])
+    tab1, tab2 = st.tabs(["🔍 Assess Loan", "📜 My History"])
 
     with tab1:
-        st.markdown("### Applicant Details")
-        col1, col2, col3 = st.columns(3)
+        st.markdown("### 📋 Loan Application")
+        st.markdown('<div class="info-box">Fill in your details to get an instant loan eligibility assessment</div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("**👤 Personal Info**")
-            age = st.slider("Age", 18, 65, 30)
+            st.markdown("**👤 Personal Information**")
+            age = st.slider("Your Age", 18, 65, 30)
             gender = st.selectbox("Gender", ["Male", "Female"])
             county = st.selectbox("County", ['Nairobi', 'Mombasa', 'Kisumu', 'Machakos', 'Kiambu', 'Nakuru', 'Meru'])
             monthly_income = st.number_input("Monthly Income (KES)", 5000, 150000, 25000, step=1000)
 
         with col2:
-            st.markdown("**💳 Loan Details**")
+            st.markdown("**💳 Loan Request**")
             loan_amount = st.number_input("Loan Amount (KES)", 500, 50000, 5000, step=500)
             loan_purpose = st.selectbox("Loan Purpose", ['Business', 'School Fees', 'Emergency', 'Personal', 'Farm Inputs'])
-
-        with col3:
-            st.markdown("**📱 M-Pesa Activity & Scores**")
             mpesa_transactions = st.slider("M-Pesa Transactions (monthly)", 5, 200, 50)
             mpesa_volume = st.number_input("M-Pesa Volume (KES)", 1000, 100000, 15000, step=500)
-            repayment_score = st.slider("Repayment Score", 0.0, 1.0, 0.68, step=0.01)
-            credit_score = st.slider("Credit Score", 0.0, 1.0, 0.65, step=0.01)
 
-        if st.button("⚡ ASSESS CREDIT RISK", use_container_width=True):
-            input_df = pd.DataFrame([{
-                'Age': age, 'Gender': gender, 'County': county,
-                'Monthly_Income': monthly_income, 'Loan_Amount': loan_amount,
-                'Loan_Purpose': loan_purpose,
-                'Mpesa_Transactions': mpesa_transactions,
-                'Mpesa_Volume': mpesa_volume,
-                'Repayment_Score': repayment_score,
-                'Credit_Score': credit_score
-            }])
+        if st.button("⚡ GET ASSESSMENT", use_container_width=True):
+            # Calculate using enhanced logic
+            default_prob = calculate_default_risk(age, monthly_income, loan_amount, mpesa_transactions, mpesa_volume)
+            repayment_prob = 1 - default_prob
+            
+            if default_prob > 0.4:
+                risk_level = "HIGH RISK"
+            elif default_prob > 0.25:
+                risk_level = "MEDIUM RISK"
+            else:
+                risk_level = "LOW RISK"
 
-            input_proc = preprocessor.transform(input_df)
-            prob = model.predict_proba(input_proc)[0][1]
-            default_prob = 1 - prob
-
+            # Display Results
+            st.markdown("---")
+            st.markdown("### 📊 Assessment Results")
+            
             r1, r2, r3 = st.columns(3)
             with r1:
-                st.metric("Repayment Probability", f"{prob*100:.1f}%")
+                st.metric("Approval Probability", f"{repayment_prob*100:.1f}%")
             with r2:
-                st.metric("Default Probability", f"{default_prob*100:.1f}%")
+                st.metric("Default Risk", f"{default_prob*100:.1f}%")
             with r3:
-                risk_level = "HIGH RISK" if default_prob > 0.4 else ("MEDIUM RISK" if default_prob > 0.25 else "LOW RISK")
-                st.metric("Risk Level", risk_level)
+                st.metric("Status", risk_level)
 
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Show Risk Classification
             if default_prob > 0.4:
-                st.markdown(f'<div class="risk-high">⚠ HIGH DEFAULT RISK — Recommend: DECLINE or REDUCE LOAN</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="risk-high">⚠ HIGH RISK — Recommendation: FURTHER REVIEW REQUIRED</div>', unsafe_allow_html=True)
+            elif default_prob > 0.25:
+                st.markdown(f'<div class="risk-medium">⚡ MEDIUM RISK — Recommendation: CONDITIONAL APPROVAL</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="risk-low">✓ LOW DEFAULT RISK — Recommend: APPROVE LOAN</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="risk-low">✓ LOW RISK — Recommendation: APPROVED</div>', unsafe_allow_html=True)
 
-            # Save to database
+            # Risk Analysis
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### 📈 Risk Analysis")
+            
+            loan_to_income = loan_amount / monthly_income
+            
+            analysis = f"""
+            <div class="loan-analysis">
+            <b>Loan Analysis Factors:</b><br><br>
+            • <b>Age Factor:</b> {age} years old - {'⚠ Higher risk for younger applicants' if age < 25 else '✓ Good age for lending'}<br>
+            • <b>Loan-to-Income Ratio:</b> {loan_to_income:.2f}x - {'⚠ Loan is too high relative to income' if loan_to_income > 2 else '✓ Manageable loan amount'}<br>
+            • <b>Monthly Income:</b> KES {monthly_income:,} - {'⚠ Low income level' if monthly_income < 15000 else '✓ Sufficient income'}<br>
+            • <b>M-Pesa Activity:</b> {mpesa_transactions} transactions - {'⚠ Low activity' if mpesa_transactions < 30 else '✓ Good activity level'}<br>
+            • <b>M-Pesa Volume:</b> KES {mpesa_volume:,} - {'⚠ Low transaction volume' if mpesa_volume < 10000 else '✓ Healthy transaction volume'}
+            </div>
+            """
+            st.markdown(analysis, unsafe_allow_html=True)
+
+            # Save prediction
             if save_prediction(st.session_state.username, age, gender, county, monthly_income, 
                              loan_amount, loan_purpose, mpesa_transactions, mpesa_volume, 
-                             repayment_score, credit_score, float(default_prob), risk_level):
-                st.success("✅ Prediction saved to your history!")
+                             0.5, 0.5, float(default_prob), risk_level):
+                st.success("✅ Assessment saved to your history!")
+
+    with tab2:
+        st.markdown("### Your Assessment History")
+        predictions = get_user_predictions(st.session_state.username)
+        
+        if predictions:
+            history_data = []
+            for pred in predictions:
+                history_data.append({
+                    'Date': pd.to_datetime(pred[12]).strftime('%Y-%m-%d %H:%M'),
+                    'Loan Amount': f"KES {pred[4]:,}",
+                    'Income': f"KES {pred[3]:,}",
+                    'Ratio': f"{pred[4]/pred[3]:.2f}x",
+                    'Risk Level': pred[11],
+                    'Default Risk': f"{pred[10]*100:.1f}%"
+                })
+            
+            df_history = pd.DataFrame(history_data)
+            st.dataframe(df_history, use_container_width=True, hide_index=True)
+            st.metric("Total Assessments", len(predictions))
+        else:
+            st.info("📊 No assessments yet. Make your first assessment above!")
+
+
+# ─────────────────────────────────────────────
+# Admin Dashboard - Full Analytics
+# ─────────────────────────────────────────────
+def admin_dashboard(df, model, preprocessor, metrics, importance):
+    st.markdown("""
+    <div style='text-align:center; padding: 1rem 0;'>
+      <h2 style='font-size:1.8rem; letter-spacing:2px;'>👨‍💼 ADMIN DASHBOARD</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 Users", "📊 Model Performance", "📈 Data Insights", "📋 Dataset", "⚙ System"])
+
+    with tab1:
+        st.subheader("User Management")
+        users = get_all_users()
+        
+        if users:
+            for full_name, username, is_admin, blocked, created_at in users:
+                with st.expander(f"👤 {full_name} (@{username})"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**Full Name:** {full_name}")
+                        st.write(f"**Username:** @{username}")
+                        st.write(f"**Admin:** {'Yes ✅' if is_admin else 'No'}")
+                        st.write(f"**Status:** {'🔒 Blocked' if blocked else '✅ Active'}")
+                        st.write(f"**Joined:** {created_at}")
+
+                    with col2:
+                        if blocked:
+                            if st.button(f"🔓 Unblock {username}", key=f"unblock_{username}"):
+                                block_unblock_user(username, False)
+                                st.success(f"✅ {username} unblocked!")
+                                st.rerun()
+                        else:
+                            if st.button(f"🔒 Block {username}", key=f"block_{username}"):
+                                block_unblock_user(username, True)
+                                st.warning(f"⚠️ {username} blocked!")
+                                st.rerun()
+        else:
+            st.info("No users yet.")
 
     with tab2:
         st.markdown("### Model Performance Metrics")
@@ -571,8 +735,8 @@ def user_dashboard(df, model, preprocessor, metrics, importance):
         report = metrics['report']
         m1.metric("Accuracy", f"{metrics['accuracy']:.4f}")
         m2.metric("ROC-AUC", f"{metrics['roc_auc']:.4f}")
-        m3.metric("Precision (Class 1)", f"{report['1']['precision']:.4f}")
-        m4.metric("Recall (Class 1)", f"{report['1']['recall']:.4f}")
+        m3.metric("Precision", f"{report['1']['precision']:.4f}")
+        m4.metric("Recall", f"{report['1']['recall']:.4f}")
 
         c1, c2 = st.columns(2)
         with c1:
@@ -631,79 +795,16 @@ def user_dashboard(df, model, preprocessor, metrics, importance):
             plt.close()
 
     with tab4:
-        st.markdown("### Synthetic Dataset Preview")
+        st.markdown("### Dataset Preview")
         d1, d2, d3 = st.columns(3)
         d1.metric("Total Records", f"{len(df):,}")
         d2.metric("Features", str(df.shape[1] - 1))
         repaid_pct = df['Loan_Repaid'].mean() * 100
         d3.metric("Repayment Rate", f"{repaid_pct:.1f}%")
 
-        st.markdown("#### Sample Data (first 100 rows)")
         st.dataframe(df.head(100), use_container_width=True)
 
     with tab5:
-        st.markdown("### Your Prediction History")
-        predictions = get_user_predictions(st.session_state.username)
-        
-        if predictions:
-            df_history = pd.DataFrame(predictions, columns=[
-                'Age', 'Gender', 'County', 'Monthly Income', 'Loan Amount', 'Loan Purpose',
-                'M-Pesa Transactions', 'M-Pesa Volume', 'Repayment Score', 'Credit Score',
-                'Default Probability', 'Risk Level', 'Date & Time'
-            ])
-            
-            df_history['Default Probability'] = df_history['Default Probability'].apply(lambda x: f"{x*100:.1f}%")
-            df_history['Date & Time'] = pd.to_datetime(df_history['Date & Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-            
-            st.dataframe(df_history, use_container_width=True)
-            st.metric("Total Predictions Made", len(predictions))
-        else:
-            st.info("📊 No predictions yet. Make your first prediction!")
-
-
-# ─────────────────────────────────────────────
-# Admin Dashboard
-# ─────────────────────────────────────────────
-def admin_dashboard():
-    st.markdown("""
-    <div style='text-align:center; padding: 1rem 0;'>
-      <h2 style='font-size:1.8rem; letter-spacing:2px;'>👨‍💼 ADMIN DASHBOARD</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-    tab1, tab2, tab3 = st.tabs(["👥 User Management", "📊 System Stats", "📜 Activity Log"])
-
-    with tab1:
-        st.subheader("Manage Users")
-        users = get_all_users()
-        
-        if users:
-            for full_name, username, is_admin, blocked, created_at in users:
-                with st.expander(f"👤 {full_name} (@{username})"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**Full Name:** {full_name}")
-                        st.write(f"**Username:** @{username}")
-                        st.write(f"**Admin:** {'Yes ✅' if is_admin else 'No'}")
-                        st.write(f"**Status:** {'🔒 Blocked' if blocked else '✅ Active'}")
-                        st.write(f"**Joined:** {created_at}")
-
-                    with col2:
-                        if blocked:
-                            if st.button(f"🔓 Unblock {username}", key=f"unblock_{username}"):
-                                block_unblock_user(username, False)
-                                st.success(f"✅ {username} unblocked!")
-                                st.rerun()
-                        else:
-                            if st.button(f"🔒 Block {username}", key=f"block_{username}"):
-                                block_unblock_user(username, True)
-                                st.warning(f"⚠️ {username} blocked!")
-                                st.rerun()
-        else:
-            st.info("No users yet.")
-
-    with tab2:
         st.subheader("System Statistics")
         users = get_all_users()
         
@@ -715,11 +816,7 @@ def admin_dashboard():
         m1.metric("👥 Total Users", total_users)
         m2.metric("✅ Active Users", total_users - blocked_users)
         m3.metric("👨‍💼 Admin Users", admin_users)
-        m4.metric("📊 Total Predictions", "Coming soon")
-
-    with tab3:
-        st.subheader("Prediction Activity")
-        st.info("📊 Activity log feature coming soon")
+        m4.metric("📊 System Status", "🟢 Healthy")
 
 
 # ─────────────────────────────────────────────
@@ -729,25 +826,26 @@ def admin_dashboard():
 if not st.session_state.logged_in:
     login_page()
 else:
-    # Load model and data
     df = generate_data()
-    with st.spinner("🔄 Training model on synthetic dataset..."):
+    with st.spinner("🔄 Loading system..."):
         model, preprocessor, metrics, importance, X_test, y_test = train_model(df)
 
-    # Sidebar
     with st.sidebar:
         st.markdown("---")
-        st.markdown(f"**👤 Logged in as:** `{st.session_state.full_name}`")
-        st.markdown(f"**@username:** `{st.session_state.username}`")
+        st.markdown(f"**👤** {st.session_state.full_name}")
+        st.markdown(f"**@** {st.session_state.username}")
         
         if st.session_state.is_admin:
-            st.markdown("**🔑 Role:** 👨‍💼 Admin")
+            st.markdown("**🔑 Role:** Admin")
         else:
-            st.markdown("**🔑 Role:** 👤 User")
+            st.markdown("**🔑 Role:** User")
         
         st.markdown("---")
+        st.markdown("**Powered by:** 🇰🇪 Hustler Fund")
+        st.markdown("**President:** William Samoei Ruto")
+        st.markdown("---")
         
-        if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
+        if st.button("🚪 Logout", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = None
             st.session_state.full_name = None
@@ -755,6 +853,6 @@ else:
             st.rerun()
 
     if st.session_state.is_admin:
-        admin_dashboard()
+        admin_dashboard(df, model, preprocessor, metrics, importance)
     else:
-        user_dashboard(df, model, preprocessor, metrics, importance)
+        user_dashboard()
